@@ -52,25 +52,42 @@ def select_device(device_arg: str) -> torch.device:
 # Model loading
 # ---------------------------------------------------------------------------
 
-def _build_unet(device: torch.device) -> UNet2DModel:
-    """Construct UNet2DModel matching the training configuration (~11M params)."""
+def _infer_unet_cfg(state_dict: dict) -> tuple:
+    """Infer (block_out_channels, layers_per_block) from checkpoint weights."""
+    n_levels = max(int(k.split(".")[1]) for k in state_dict if k.startswith("down_blocks.")) + 1
+    c0 = state_dict["conv_in.weight"].shape[0]
+    block_out_channels = tuple(c0 * (2 ** i) for i in range(n_levels))
+    layers_per_block = max(
+        int(k.split(".")[3]) for k in state_dict if k.startswith("down_blocks.0.resnets.")
+    ) + 1
+    return block_out_channels, layers_per_block
+
+
+def _build_unet(
+    block_out_channels: tuple,
+    layers_per_block: int,
+    device: torch.device,
+) -> UNet2DModel:
+    n = len(block_out_channels)
     return UNet2DModel(
         sample_size=(MEL_H, MEL_W),
         in_channels=1,
         out_channels=1,
-        layers_per_block=2,
-        block_out_channels=(64, 128, 256),
-        down_block_types=("DownBlock2D", "DownBlock2D", "DownBlock2D"),
-        up_block_types=("UpBlock2D", "UpBlock2D", "UpBlock2D"),
+        layers_per_block=layers_per_block,
+        block_out_channels=block_out_channels,
+        down_block_types=("DownBlock2D",) * n,
+        up_block_types=("UpBlock2D",) * n,
         mid_block_type="UNetMidBlock2D",
         norm_num_groups=8,
     ).to(device)
 
 
 def load_diffusion_model(ckpt_path: Path, device: torch.device) -> UNet2DModel:
-    model = _build_unet(device)
     payload = torch.load(str(ckpt_path), map_location="cpu")
     state_dict = payload["model"] if "model" in payload else payload
+    block_out_channels, layers_per_block = _infer_unet_cfg(state_dict)
+    print(f"  Detected arch: block_out_channels={block_out_channels}, layers_per_block={layers_per_block}")
+    model = _build_unet(block_out_channels, layers_per_block, device)
     model.load_state_dict(state_dict)
     model.eval()
     return model
