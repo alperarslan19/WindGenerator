@@ -66,7 +66,7 @@ def main():
     if drive_dir:
         drive_dir.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Device:", device)
 
     # Optional stability tweak (safe)
