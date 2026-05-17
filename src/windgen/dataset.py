@@ -14,10 +14,8 @@ from windgen.mels import MelSpecConfig, LogMelExtractor, load_wav_mono_resample
 
 @dataclass(frozen=True)
 class DatasetConfig:
-    data_dir: Path  # wind_clean
-    clips_subdir: str = "clips"
-    metadata_name: str = "metadata.csv"
-    # Path A: global stats file used for normalization (relative to repo root by default)
+    data_dir: Path  # directory containing .wav clips (and optionally metadata.csv)
+    # Path A: global stats file used for normalization (absolute or relative to repo root)
     mel_stats_relpath: str = "outputs/mel_stats.json"
 
 
@@ -34,17 +32,23 @@ class WindMelDataset(Dataset):
     def __init__(self, cfg: DatasetConfig, mel_cfg: MelSpecConfig, target_frames: int = 440):
         self.cfg = cfg
         self.data_dir = Path(os.path.expanduser(str(cfg.data_dir))).resolve()
-        self.clips_dir = self.data_dir / cfg.clips_subdir
-        self.meta_path = self.data_dir / cfg.metadata_name
 
-        if not self.meta_path.exists():
-            raise FileNotFoundError(f"Missing metadata.csv: {self.meta_path}")
-        if not self.clips_dir.exists():
-            raise FileNotFoundError(f"Missing clips dir: {self.clips_dir}")
+        if not self.data_dir.exists():
+            raise FileNotFoundError(f"data_dir not found: {self.data_dir}")
 
-        self.df = pd.read_csv(self.meta_path)
-        if "clip_filename" not in self.df.columns:
-            raise ValueError("metadata.csv must contain clip_filename column")
+        meta_path = self.data_dir / "metadata.csv"
+        if meta_path.exists():
+            self.df = pd.read_csv(meta_path)
+            if "clip_filename" not in self.df.columns:
+                raise ValueError("metadata.csv must contain clip_filename column")
+        else:
+            wav_files = sorted(self.data_dir.glob("*.wav"))
+            if not wav_files:
+                raise FileNotFoundError(
+                    f"No metadata.csv and no *.wav files found in: {self.data_dir}"
+                )
+            self.df = pd.DataFrame({"clip_filename": [f.name for f in wav_files]})
+            print(f"  No metadata.csv; discovered {len(wav_files)} wav files in {self.data_dir}")
 
         # Resolve repo root: .../WindGenerator/src/windgen/dataset.py -> parents[2] = repo root
         repo_root = Path(__file__).resolve().parents[2]
@@ -73,7 +77,7 @@ class WindMelDataset(Dataset):
     def __getitem__(self, idx: int):
         row = self.df.iloc[idx]
         clip_name = str(row["clip_filename"])
-        clip_path = self.clips_dir / clip_name
+        clip_path = self.data_dir / clip_name
 
         wav = load_wav_mono_resample(clip_path, target_sr=self.extractor.config.sr)
 
