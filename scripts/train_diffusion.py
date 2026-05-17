@@ -24,7 +24,9 @@ Outputs:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import time
 from pathlib import Path
 
 import torch
@@ -54,6 +56,8 @@ def parse_args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     args = parse_args()
 
     # -------------------------
@@ -125,7 +129,7 @@ if __name__ == "__main__":
     total_params = sum(p.numel() for p in model.parameters())
     print(f"UNet parameters: {total_params:,}")
 
-    model.enable_gradient_checkpointing()
+    model.disable_gradient_checkpointing()
 
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
 
@@ -147,6 +151,7 @@ if __name__ == "__main__":
     model.train()
     global_step = 0
     micro_step = 0
+    step_t0 = time.perf_counter()
 
     optim.zero_grad(set_to_none=True)
 
@@ -189,7 +194,10 @@ if __name__ == "__main__":
             pbar.update(1)
 
             if global_step % log_every == 0:
-                pbar.set_postfix(loss=loss_item)
+                ms = (time.perf_counter() - step_t0) / log_every * 1000
+                step_t0 = time.perf_counter()
+                pbar.set_postfix(loss=f"{loss_item:.4f}", ms=f"{ms:.0f}")
+                tqdm.write(f"Step {global_step} | loss={loss_item:.4f} | {ms:.0f}ms/step")
 
             if global_step % sample_every == 0:
                 model.eval()
