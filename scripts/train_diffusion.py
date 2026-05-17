@@ -96,10 +96,10 @@ if __name__ == "__main__":
     # -------------------------
     # Loader
     # -------------------------
-    batch_size = 8
+    batch_size = 4
     dl = DataLoader(
         ds, batch_size=batch_size, shuffle=True,
-        num_workers=4, pin_memory=True, drop_last=True,
+        num_workers=2, pin_memory=True, drop_last=True,
     )
 
     # -------------------------
@@ -107,15 +107,12 @@ if __name__ == "__main__":
     # -------------------------
     H, W = 128, target_frames
 
-    # ~11M parameter UNet — 3 levels to keep 440-wide input divisible by 2³=8.
-    # block_out_channels=(64,128,256) with layers_per_block=2 is the minimum
-    # config that comfortably exceeds 10M params while staying attention-free.
     model = UNet2DModel(
         sample_size=(H, W),
         in_channels=1,
         out_channels=1,
-        layers_per_block=2,
-        block_out_channels=(64, 128, 256),
+        layers_per_block=1,
+        block_out_channels=(32, 64, 128),
         down_block_types=("DownBlock2D", "DownBlock2D", "DownBlock2D"),
         up_block_types=("UpBlock2D", "UpBlock2D", "UpBlock2D"),
         mid_block_type="UNetMidBlock2D",  # no attention
@@ -137,7 +134,7 @@ if __name__ == "__main__":
     # -------------------------
     lr = 2e-4
     optim = torch.optim.AdamW(model.parameters(), lr=lr)
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
+    scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
 
     steps = args.max_steps
     grad_accum_steps = 8       # effective batch = batch_size * grad_accum_steps
@@ -173,8 +170,7 @@ if __name__ == "__main__":
         noise = torch.randn_like(x0)
         xt = noise_scheduler.add_noise(x0, noise, timesteps).to(device)
 
-        with torch.autocast(device_type=device.type, dtype=torch.float16,
-                            enabled=(device.type == "cuda")):
+        with torch.amp.autocast("cuda", enabled=(device.type == "cuda")):
             pred = model(xt, timesteps).sample
             loss = torch.mean((pred - noise) ** 2)
 
