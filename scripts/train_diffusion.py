@@ -2,13 +2,13 @@
 """
 train_diffusion.py
 
-MPS-friendly DDPM training on log-mel "images".
+DDPM training on log-mel "images".
 
 Key features:
 - Fixed mel shape: (1, 128, 440)
 - Attention-free UNet mid-block (no attention)
 - ~11M parameter UNet + gradient checkpointing
-- Batch size = 1 with gradient accumulation (stable on Apple MPS)
+- Mixed-precision training (AMP) on CUDA
 - Periodic sampling (saves mel grids as PNG)
 - Periodic checkpoint saving
 
@@ -41,7 +41,7 @@ from windgen.viz import save_mel_grid
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Train DDPM on wind log-mel spectrograms")
     ap.add_argument("--data_dir", type=str, default="/root/Datasets/wind_clean",
-                    help="Path to wind_clean dataset directory")
+                    help="Path to directory containing .wav clips")
     ap.add_argument("--mel_stats", type=str, default="outputs/mel_stats.json",
                     help="Path to mel_stats.json (absolute or relative to repo root)")
     ap.add_argument("--output_dir", type=str, default="outputs/train_ddpm",
@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
     return ap.parse_args()
 
 
-def main():
+if __name__ == "__main__":
     args = parse_args()
 
     # -------------------------
@@ -94,10 +94,13 @@ def main():
     )
 
     # -------------------------
-    # Loader (MPS-friendly)
+    # Loader
     # -------------------------
-    batch_size = 16
-    dl = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=2, drop_last=True)
+    batch_size = 8
+    dl = DataLoader(
+        ds, batch_size=batch_size, shuffle=True,
+        num_workers=4, pin_memory=True, drop_last=True,
+    )
 
     # -------------------------
     # Model (small + no attention)
@@ -117,12 +120,14 @@ def main():
         up_block_types=("UpBlock2D", "UpBlock2D", "UpBlock2D"),
         mid_block_type="UNetMidBlock2D",  # no attention
         norm_num_groups=8,
-    ).to(device)
+    )
+    model = model.to(device)
+    print(f"Model device: {next(model.parameters()).device}")
+    print(f"GPU after model load: {torch.cuda.memory_allocated()/1024**3:.2f} GB")
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"UNet parameters: {total_params:,}")
 
-    # Big memory saver on MPS (compute-heavy but worth it)
     model.enable_gradient_checkpointing()
 
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
@@ -135,17 +140,16 @@ def main():
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
 
     steps = args.max_steps
-    grad_accum_steps = 8       # effective batch ~ 8
+    grad_accum_steps = 8       # effective batch = batch_size * grad_accum_steps
     log_every = 50
     sample_every = 500
     save_every = 1000
 
-    # Sampling config (keep small for memory)
     sample_batch = 2
 
     model.train()
     global_step = 0
-    micro_step = 0  # counts accumulation steps
+    micro_step = 0
 
     optim.zero_grad(set_to_none=True)
 
@@ -159,32 +163,26 @@ def main():
             dl_iter = iter(dl)
             batch = next(dl_iter)
 
-        x0 = batch["mel"].to(device)  # (1,1,128,440)
+        x0 = batch["mel"].to(device, non_blocking=True)  # (B,1,128,440)
         bsz = x0.shape[0]
 
-        # Random timesteps per sample
         timesteps = torch.randint(
             0, noise_scheduler.config.num_train_timesteps, (bsz,), device=device
         ).long()
 
-        # Add noise
         noise = torch.randn_like(x0)
         xt = noise_scheduler.add_noise(x0, noise, timesteps).to(device)
 
-        # Predict noise
         with torch.autocast(device_type=device.type, dtype=torch.float16,
                             enabled=(device.type == "cuda")):
             pred = model(xt, timesteps).sample
             loss = torch.mean((pred - noise) ** 2)
 
-        # Keep unscaled loss for logging
         loss_item = float(loss.detach().cpu())
 
-        # Gradient accumulation
         scaler.scale(loss / grad_accum_steps).backward()
         micro_step += 1
 
-        # Only update weights every grad_accum_steps
         if micro_step % grad_accum_steps == 0:
             scaler.unscale_(optim)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -197,7 +195,6 @@ def main():
             if global_step % log_every == 0:
                 pbar.set_postfix(loss=loss_item)
 
-            # Save sample images
             if global_step % sample_every == 0:
                 model.eval()
                 with torch.no_grad():
@@ -212,7 +209,6 @@ def main():
                     )
                 model.train()
 
-            # Save checkpoints
             if global_step % save_every == 0:
                 ckpt = {
                     "model": model.state_dict(),
@@ -237,7 +233,3 @@ def main():
         out_dir / "final_model.pt",
     )
     print("Done. Outputs in:", out_dir)
-
-
-if __name__ == "__main__":
-    main()
