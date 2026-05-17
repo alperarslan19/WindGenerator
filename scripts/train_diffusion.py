@@ -96,8 +96,8 @@ def main():
     # -------------------------
     # Loader (MPS-friendly)
     # -------------------------
-    batch_size = 1
-    dl = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=0, drop_last=True)
+    batch_size = 16
+    dl = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=2, drop_last=True)
 
     # -------------------------
     # Model (small + no attention)
@@ -132,6 +132,7 @@ def main():
     # -------------------------
     lr = 2e-4
     optim = torch.optim.AdamW(model.parameters(), lr=lr)
+    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
 
     steps = args.max_steps
     grad_accum_steps = 8       # effective batch ~ 8
@@ -168,25 +169,27 @@ def main():
 
         # Add noise
         noise = torch.randn_like(x0)
-        xt = noise_scheduler.add_noise(x0, noise, timesteps)
+        xt = noise_scheduler.add_noise(x0, noise, timesteps).to(device)
 
         # Predict noise
-        pred = model(xt, timesteps).sample
-
-        # MSE loss
-        loss = torch.mean((pred - noise) ** 2)
+        with torch.autocast(device_type=device.type, dtype=torch.float16,
+                            enabled=(device.type == "cuda")):
+            pred = model(xt, timesteps).sample
+            loss = torch.mean((pred - noise) ** 2)
 
         # Keep unscaled loss for logging
         loss_item = float(loss.detach().cpu())
 
         # Gradient accumulation
-        (loss / grad_accum_steps).backward()
+        scaler.scale(loss / grad_accum_steps).backward()
         micro_step += 1
 
         # Only update weights every grad_accum_steps
         if micro_step % grad_accum_steps == 0:
+            scaler.unscale_(optim)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optim.step()
+            scaler.step(optim)
+            scaler.update()
             optim.zero_grad(set_to_none=True)
             global_step += 1
             pbar.update(1)
