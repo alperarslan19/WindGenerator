@@ -141,8 +141,8 @@ if __name__ == "__main__":
     scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
 
     steps = args.max_steps
-    grad_accum_steps = 8       # effective batch = batch_size * grad_accum_steps
-    log_every = 50
+    grad_accum_steps = 1
+    log_every = 100
     sample_every = 500
     save_every = 1000
 
