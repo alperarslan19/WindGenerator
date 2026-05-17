@@ -23,7 +23,8 @@ Outputs:
 
 from __future__ import annotations
 
-import os
+import argparse
+import shutil
 from pathlib import Path
 
 import torch
@@ -37,13 +38,33 @@ from windgen.mels import MelSpecConfig
 from windgen.viz import save_mel_grid
 
 
+def parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description="Train DDPM on wind log-mel spectrograms")
+    ap.add_argument("--data_dir", type=str, default="/root/Datasets/wind_clean",
+                    help="Path to wind_clean dataset directory")
+    ap.add_argument("--mel_stats", type=str, default="outputs/mel_stats.json",
+                    help="Path to mel_stats.json (absolute or relative to repo root)")
+    ap.add_argument("--output_dir", type=str, default="outputs/train_ddpm",
+                    help="Directory to write checkpoints and samples")
+    ap.add_argument("--max_steps", type=int, default=100_000,
+                    help="Total training steps")
+    ap.add_argument("--drive_dir", type=str, default=None,
+                    help="If provided, copy each checkpoint here after saving")
+    return ap.parse_args()
+
+
 def main():
+    args = parse_args()
+
     # -------------------------
     # Paths / device
     # -------------------------
-    data_dir = Path(os.path.expanduser("~/Datasets/wind_clean")).resolve()
-    out_dir = Path("outputs/train_ddpm").resolve()
+    data_dir = Path(args.data_dir).expanduser().resolve()
+    out_dir = Path(args.output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    drive_dir = Path(args.drive_dir).resolve() if args.drive_dir else None
+    if drive_dir:
+        drive_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print("Device:", device)
@@ -67,7 +88,7 @@ def main():
     target_frames = 440  # divisible by 8 for 3 downsamples
 
     ds = WindMelDataset(
-        DatasetConfig(data_dir=data_dir),
+        DatasetConfig(data_dir=data_dir, mel_stats_relpath=args.mel_stats),
         mel_cfg,
         target_frames=target_frames,
     )
@@ -112,7 +133,7 @@ def main():
     lr = 2e-4
     optim = torch.optim.AdamW(model.parameters(), lr=lr)
 
-    steps = 100_000
+    steps = args.max_steps
     grad_accum_steps = 8       # effective batch ~ 8
     log_every = 50
     sample_every = 500
@@ -197,7 +218,10 @@ def main():
                     "mel_cfg": mel_cfg.__dict__,
                     "target_frames": target_frames,
                 }
-                torch.save(ckpt, out_dir / f"ckpt_step_{global_step:06d}.pt")
+                ckpt_path = out_dir / f"ckpt_step_{global_step:06d}.pt"
+                torch.save(ckpt, ckpt_path)
+                if drive_dir:
+                    shutil.copy2(ckpt_path, drive_dir / ckpt_path.name)
 
     pbar.close()
     torch.save(
