@@ -14,6 +14,12 @@ The hypothesis was that treating sound as a 2D image (a spectrogram) and learnin
 
 ---
 
+## Data
+
+Dataset: [Wind Sounds Dataset on Kaggle](https://www.kaggle.com/datasets/alperaanarslan/wind-sounds-dataset)
+
+1,966 wind audio clips...
+
 ## Pipeline Overview
 
 ```
