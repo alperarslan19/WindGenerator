@@ -132,6 +132,13 @@ def mel_to_audio(mel: torch.Tensor, mel_mean: float, mel_std: float) -> np.ndarr
     x = torch.exp(x) - eps
     x = x.clamp(min=0.0).cpu()
 
+    inverse_mel = torchaudio.transforms.InverseMelScale(
+        n_stft=513,
+        n_mels=128,
+        sample_rate=22050,
+        f_min=20.0,
+        f_max=11025.0,
+    )
     griffin_lim = torchaudio.transforms.GriffinLim(
         n_fft=1024,
         hop_length=256,
@@ -139,7 +146,10 @@ def mel_to_audio(mel: torch.Tensor, mel_mean: float, mel_std: float) -> np.ndarr
         power=2.0,
         n_iter=64,
     )
-    wav = griffin_lim(x)  # (1, T)
+
+    # x is already denormalized linear mel power spectrogram (128, T)
+    x = inverse_mel(x)   # (513, T)
+    wav = griffin_lim(x) # (T,)
     return wav.squeeze(0).numpy().astype(np.float32)
 
 
