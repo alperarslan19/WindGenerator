@@ -2,9 +2,9 @@
 
 A study in learning representations of environmental sound — specifically, whether a diffusion model trained on mel spectrograms can capture the statistical structure of wind well enough to generate new, perceptually convincing instances.
 
-**[Generated audio samples →](https://github.com/alpercagan/WindGenerator/releases/tag/v0.1-audio-samples)**
+**[Generated audio samples →](https://github.com/alperarslan19/WindGenerator/releases/tag/v0.1-audio-samples)**
 
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](...)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/alperarslan19/WindGenerator/blob/main/notebooks/wind_generator_demo.ipynb)
 
 ---
 
