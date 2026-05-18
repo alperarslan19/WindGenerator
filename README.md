@@ -4,6 +4,7 @@ A study in learning representations of environmental sound — specifically, whe
 
 **[Generated audio samples →](https://github.com/alpercagan/WindGenerator/releases/tag/v0.1-audio-samples)**
 
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/alpercagan/WindGenerator/blob/main/notebooks/wind_generator_demo.ipynb)
 ---
 
 ## Motivation
