@@ -143,7 +143,7 @@ A custom vocoder was trained as part of this project (STFT loss, ~75k steps). Th
 
 ## Results
 
-Generated audio samples are available in the [v1.0 release](https://github.com/alpercagan/WindGenerator/releases/tag/v0.1-audio-samples).
+Generated audio samples are available in the [v1.0 release](https://github.com/alperarslan19/WindGenerator/releases/tag/v0.1-audio-samples).
 
 The outputs demonstrate that the diffusion model has learned the spectral structure of wind: the broadband texture, low-frequency energy distribution, and temporal variation characteristic of wind recordings are present. The metallic quality is attributable to Griffin-Lim phase reconstruction, not to the learned representation.
 
