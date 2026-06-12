@@ -6,6 +6,8 @@ A study in learning representations of environmental sound — specifically, whe
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/alperarslan19/WindGenerator/blob/main/notebooks/wind_generator_demo.ipynb)
 
+**[Model weights on Hugging Face →](https://huggingface.co/alpercagann/wind-generator)**
+
 ---
 
 
