@@ -7,7 +7,7 @@ DDPM training on log-mel "images".
 Key features:
 - Fixed mel shape: (1, 128, 440)
 - Attention-free UNet mid-block (no attention)
-- ~11M parameter UNet + gradient checkpointing
+- Lightweight ~2.5M parameter UNet (attention-free)
 - Mixed-precision training (AMP) on CUDA
 - Periodic sampling (saves mel grids as PNG)
 - Periodic checkpoint saving
@@ -128,8 +128,6 @@ if __name__ == "__main__":
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"UNet parameters: {total_params:,}")
-
-    model.disable_gradient_checkpointing()
 
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
 
