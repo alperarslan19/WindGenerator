@@ -105,7 +105,7 @@ loss = MSE(model(x_t, t), noise)
 
 **Scheduler:** DDPMScheduler with 1,000 timesteps, linear noise schedule.
 
-**Optimizer:** AdamW, lr=1e-4.
+**Optimizer:** AdamW, lr=2e-4.
 
 **Mixed precision:** `torch.amp.autocast('cuda')` with GradScaler — approximately 2× speedup over fp32.
 
@@ -113,12 +113,11 @@ loss = MSE(model(x_t, t), noise)
 
 **Checkpoints:** Saved every 1,000 steps to Google Drive for persistence across sessions.
 
-A key practical challenge was training across multiple interrupted Colab sessions. Each session wipes the working directory on termination. The solution was to save numbered checkpoints to Google Drive after each save interval, and restore the latest checkpoint at startup. This allowed training to resume from where it left off across multiple sessions.
+A key practical challenge was training across multiple interrupted Colab sessions. Each session wipes the working directory on termination. The solution was to save numbered checkpoints to Google Drive after each save interval; at the start of each new session, training was resumed manually from the latest saved checkpoint. This allowed training to continue from where it left off across multiple sessions.
 
 ### Inference
 
-At inference, the model runs 100 DDPM denoising steps starting from a Gaussian noise tensor of shape `(1, 128, 440)`. The output is a normalized mel spectrogram in `[-1, 1]`, which is then denormalized and converted to audio.
-
+At inference, the model runs 50 DDPM denoising steps by default (configurable via `--ddpm_steps`), starting from a Gaussian noise tensor of shape `(1, 128, 440)`. The output is a normalized mel spectrogram in `[-1, 1]`, which is then denormalized and converted to audio.
 ---
 
 ## Audio Reconstruction: Griffin-Lim
@@ -137,13 +136,12 @@ The pipeline uses `InverseMelScale` (to map 128 mel bins back to 513 STFT bins) 
 
 The natural next step is a neural vocoder: a network trained to convert mel spectrograms to waveforms directly, learning phase relationships implicitly. Standard vocoders (HiFi-GAN, WaveGlow) are trained on speech and import speech-specific inductive biases. A vocoder trained on the same wind dataset would in principle produce cleaner output.
 
-A custom vocoder was trained as part of this project (STFT loss, ~75k steps). The results showed correct spectral texture but persistent phase artifacts. Adversarial fine-tuning (GAN) was attempted but did not converge stably — the discriminator memorized the small dataset (1,966 clips) before the generator could learn to fool it. This remains an open direction.
-
+Training a vocoder on the wind dataset itself is documented as the main direction for future work.
 ---
 
 ## Results
 
-Generated audio samples are available in the [v1.0 release](https://github.com/alperarslan19/WindGenerator/releases/tag/v0.1-audio-samples).
+Generated audio samples are available in the [v0.1 release](https://github.com/alperarslan19/WindGenerator/releases/tag/v0.1-audio-samples).
 
 The outputs demonstrate that the diffusion model has learned the spectral structure of wind: the broadband texture, low-frequency energy distribution, and temporal variation characteristic of wind recordings are present. The metallic quality is attributable to Griffin-Lim phase reconstruction, not to the learned representation.
 
